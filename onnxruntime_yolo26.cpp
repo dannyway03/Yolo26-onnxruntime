@@ -178,13 +178,30 @@ void postprocess(cv::Mat& input_image, const std::vector<Ort::Value>& outputs, i
                  int input_width, int input_height, int img_height, int img_width,
                  float confidence_thres = 0.35f) {
     // Get output tensor (output[0][0] in Python)
+    // Python: outputs = output[0][0] - gets first batch, first element
+    // The output shape is [1, num_detections, features] where features >= 6
     auto output_tensor = outputs[0].GetTensorData<float>();
     auto output_shape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
     
-    // Output shape is typically [1, num_detections, 6] or [1, num_detections, num_classes+5]
-    // We access the first batch element, so shape[1] is num_detections
-    int rows = (int)output_shape[1];
-    int cols = (int)output_shape[2];  // Should be at least 6: [x, y, w, h, confidence, class_id, ...]
+    // Output shape is [1, num_detections, 6] or [1, num_detections, num_classes+5]
+    // We access the first batch element (batch=0), so shape[1] is num_detections
+    if (output_shape.size() != 3 || output_shape[0] != 1) {
+        std::cerr << "Unexpected output shape. Expected [1, num_detections, features], got [";
+        for (size_t i = 0; i < output_shape.size(); ++i) {
+            std::cerr << output_shape[i];
+            if (i < output_shape.size() - 1) std::cerr << ", ";
+        }
+        std::cerr << "]" << std::endl;
+        return;
+    }
+    
+    int rows = (int)output_shape[1];  // num_detections
+    int cols = (int)output_shape[2];  // features (should be at least 6)
+    
+    if (cols < 6) {
+        std::cerr << "Output tensor has insufficient features: " << cols << " (expected at least 6)" << std::endl;
+        return;
+    }
     
     std::vector<float> boxes;
     std::vector<float> scores;
@@ -199,27 +216,23 @@ void postprocess(cv::Mat& input_image, const std::vector<Ort::Value>& outputs, i
         if (max_score >= confidence_thres) {
             int class_id = (int)output_tensor[offset + 5];
             
-            // Extract box coordinates (model outputs x, y, w, h in normalized/padded coordinates)
-            float x = output_tensor[offset + 0];
-            float y = output_tensor[offset + 1];
-            float w = output_tensor[offset + 2];
-            float h = output_tensor[offset + 3];
-            
-            // Convert to xyxy format for scale_boxes (xywh=False)
-            std::vector<float> box_xyxy = {
-                x - w / 2.0f,
-                y - h / 2.0f,
-                x + w / 2.0f,
-                y + h / 2.0f
+            // Extract box coordinates directly (outputs[i,:4] in Python)
+            // Python passes outputs[i,:4] directly to scale_boxes with xywh=False
+            // This means the model outputs are treated as xyxy format [x1, y1, x2, y2]
+            std::vector<float> box_raw = {
+                output_tensor[offset + 0],
+                output_tensor[offset + 1],
+                output_tensor[offset + 2],
+                output_tensor[offset + 3]
             };
             
             // Scale boxes from model input size [640, 640] to original image size
-            // img1_shape is [input_height, input_width] (model input: [640, 640])
-            // img0_shape is [img_height, img_width] (original image)
-            std::vector<float> scaled_box = scale_boxes(box_xyxy, input_height, input_width,
+            // Matching Python: scale_boxes([640,640], outputs[i,:4], (img_height, img_width), xywh=False)
+            std::vector<float> scaled_box = scale_boxes(box_raw, input_height, input_width,
                                                         img_height, img_width, true);
             
-            // Convert back to xywh format for drawing (as Python code does)
+            // Convert to xywh format for drawing (as Python code does: [x1, y1, w, h])
+            // Python: boxes.append([int(new_bbox[0]),int(new_bbox[1]),int(new_bbox[2]-new_bbox[0]),int(new_bbox[3]-new_bbox[1])])
             float scaled_x1 = scaled_box[0];
             float scaled_y1 = scaled_box[1];
             float scaled_w = scaled_box[2] - scaled_box[0];
@@ -227,8 +240,8 @@ void postprocess(cv::Mat& input_image, const std::vector<Ort::Value>& outputs, i
             
             boxes.push_back(scaled_x1);
             boxes.push_back(scaled_y1);
-            boxes.push_back(scaled_x1 + scaled_w);
-            boxes.push_back(scaled_y1 + scaled_h);
+            boxes.push_back(scaled_w);
+            boxes.push_back(scaled_h);
             
             scores.push_back(max_score);
             class_ids.push_back(class_id);
@@ -237,12 +250,12 @@ void postprocess(cv::Mat& input_image, const std::vector<Ort::Value>& outputs, i
     
     // Draw detections (one at a time like Python code)
     for (size_t i = 0; i < class_ids.size(); ++i) {
-        // Convert from xyxy stored in boxes to xywh format for drawing
+        // Boxes are already stored in xywh format: [x1, y1, w, h]
         std::vector<float> box_xywh = {
-            boxes[i * 4],
-            boxes[i * 4 + 1],
-            boxes[i * 4 + 2] - boxes[i * 4],      // width
-            boxes[i * 4 + 3] - boxes[i * 4 + 1]   // height
+            boxes[i * 4],      // x1
+            boxes[i * 4 + 1],  // y1
+            boxes[i * 4 + 2],  // w
+            boxes[i * 4 + 3]   // h
         };
         draw_detections(input_image, box_xywh, scores[i], class_ids[i]);
     }
