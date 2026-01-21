@@ -1,0 +1,69 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++-20",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+                "onnxruntime_DIR": "/home/briox/Software/cpp/libs/onnxruntime_v1.22.2/install/Ubuntu/OVEP/RelWithDebInfo/lib/cmake/onnxruntime",
+                "OpenCV_DIR": "/home/briox/Software/cpp/libs/opencv-4.10.0/installGCC/tbbOrtOV/lib/cmake/opencv4"
+            }
+        },
+        {
+            "name": "Debug",
+            "description": "Debug build with full logging",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "Release",
+            "description": "Optimized release build",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "RelWithDebInfo",
+            "description": "Release with debug symbols for profiling",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
+        },
+        {
+            "name": "Custom configure preset",
+            "displayName": "Custom configure preset",
+            "description": "Sets Ninja generator, build and install directory",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "Debug",
+            "configurePreset": "Debug",
+            "jobs": 6
+        },
+        {
+            "name": "Release",
+            "configurePreset": "Release",
+            "jobs": 6
+        },
+        {
+            "name": "RelWithDebInfo",
+            "configurePreset": "RelWithDebInfo",
+            "jobs": 6
+        }
+    ]
+}
